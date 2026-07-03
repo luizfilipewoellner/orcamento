@@ -167,6 +167,7 @@
     color:var(--ink); outline:none; border-bottom:1px dashed transparent;
   }
   .proc-row input.proc-name-input:focus{border-bottom-color:var(--wine-light);}
+  .proc-row .proc-name-fixed{flex:1; font-size:14px; color:var(--ink);}
   .proc-row .currency{font-size:13px; color:var(--muted); margin-right:2px;}
   .proc-row input.proc-value{
     width:100px; text-align:right; border:none;
@@ -352,11 +353,14 @@
   body.pdf-export .city-date{
     font-family: Georgia, 'Times New Roman', serif !important;
   }
-  body.pdf-export .field input{padding:6px 2px !important; line-height:1.2 !important;}
-  body.pdf-export .proc-row{padding:14px 0 !important;}
-  body.pdf-export .proc-row .proc-name-input{line-height:1.2 !important;}
-  body.pdf-export .proc-row .proc-value{padding:4px 2px !important; line-height:1.2 !important;}
-  body.pdf-export .city-date input{padding-bottom:2px !important; line-height:1.2 !important;}
+  body.pdf-export .field-underline{padding-bottom:14px !important; margin-bottom:6px !important;}
+  body.pdf-export .field input{padding:6px 2px !important; line-height:2 !important;}
+  body.pdf-export .proc-row{padding:26px 0 !important; margin-bottom:4px !important;}
+  body.pdf-export .proc-row .proc-name-input{line-height:2 !important;}
+  body.pdf-export .value-underline{padding-bottom:12px !important;}
+  body.pdf-export .proc-row .proc-value{padding:4px 2px !important; line-height:2 !important;}
+  body.pdf-export .date-underline{padding-bottom:10px !important;}
+  body.pdf-export .city-date input{padding-bottom:2px !important; line-height:2 !important;}
 </style>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -523,9 +527,9 @@
   const STORAGE_KEY = 'orcamento_draft_v1';
 
   const defaultRows = [
-    {name:'Endolaser', value:''},
-    {name:'Escleroterapia (aplicação)', value:''},
-    {name:'Meia de compressão (pós cirúrgica)', value:''}
+    {name:'Endolaser', value:'', fixed:true},
+    {name:'Escleroterapia (aplicação)', value:'', fixed:true},
+    {name:'Meia de compressão (pós cirúrgica)', value:'', fixed:true}
   ];
 
   let state = {
@@ -604,8 +608,11 @@
     state.rows.forEach((row, idx)=>{
       const div = document.createElement('div');
       div.className = 'proc-row';
+      const nameField = row.fixed
+        ? `<span class="proc-name-fixed">${escapeHtml(row.name)}</span>`
+        : `<input class="proc-name-input" type="text" value="${escapeHtml(row.name)}" data-idx="${idx}" placeholder="Nome do procedimento">`;
       div.innerHTML = `
-        <input class="proc-name-input" type="text" value="${escapeHtml(row.name)}" data-idx="${idx}" placeholder="Nome do procedimento">
+        ${nameField}
         <span class="currency">R$</span>
         <span class="value-underline"><input class="proc-value" type="text" inputmode="decimal" value="${row.value}" data-idx="${idx}" placeholder="0,00"></span>
         <button class="remove-row" data-idx="${idx}" title="Remover">✕</button>
