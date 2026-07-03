@@ -333,10 +333,20 @@
 
   /* Fix 2: extra clearance so descenders/digits don't collide with the underline
      (html2canvas renders font metrics slightly differently than the live browser) */
-  body.pdf-export .field input{padding:5px 2px 9px !important; line-height:1.3 !important;}
-  body.pdf-export .proc-row{padding:11px 0 !important;}
-  body.pdf-export .proc-row .proc-value{padding:4px 2px 8px !important; line-height:1.3 !important;}
-  body.pdf-export .city-date input{padding-bottom:4px !important;}
+  /* Fix 2: extra clearance so descenders/digits don't collide with the underline.
+     Also force a plainer serif font for export — html2canvas seems to mis-measure
+     'Iowan Old Style' and pushes glyphs down further than the live browser does. */
+  body.pdf-export .field input,
+  body.pdf-export .proc-row .proc-name-input,
+  body.pdf-export .proc-row .proc-value,
+  body.pdf-export .city-date{
+    font-family: Georgia, 'Times New Roman', serif !important;
+  }
+  body.pdf-export .field input{padding:6px 2px 16px !important; line-height:1.1 !important;}
+  body.pdf-export .proc-row{padding:16px 0 !important; align-items:flex-start !important;}
+  body.pdf-export .proc-row .proc-name-input{padding-top:2px !important; line-height:1.1 !important;}
+  body.pdf-export .proc-row .proc-value{padding:2px 2px 12px !important; line-height:1.1 !important;}
+  body.pdf-export .city-date input{padding-bottom:10px !important; line-height:1.1 !important;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
