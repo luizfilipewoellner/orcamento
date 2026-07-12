@@ -225,6 +225,44 @@
   }
   .discount-mode-toggle button.active{background:var(--wine); color:#fff;}
 
+  .instr-row{
+    display:flex; align-items:center; gap:8px; margin-bottom:18px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  .instr-row label{font-size:11px; color:var(--muted); white-space:nowrap;}
+  .instr-row select{
+    flex:1; border:none; border-bottom:1.5px solid var(--line); background:transparent;
+    font-family:inherit; font-size:13px; color:var(--ink); padding:5px 2px; outline:none;
+  }
+  .instr-row select:focus{border-bottom-color:var(--wine);}
+  .instr-row button{
+    font-size:11px; font-weight:600; color:var(--wine); background:none;
+    border:1px solid var(--wine-light); border-radius:6px; padding:6px 10px; cursor:pointer;
+    white-space:nowrap;
+  }
+
+  .instr-form-label{display:block; font-size:10.5px; color:var(--muted); margin-bottom:3px;}
+  .instr-form-input{
+    width:100%; border:none; border-bottom:1px solid var(--line); background:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13.5px;
+    color:var(--ink); padding:5px 2px; outline:none; box-sizing:border-box;
+  }
+  .instr-form-input:focus{border-bottom-color:var(--wine);}
+  .instr-item{
+    display:flex; align-items:center; gap:8px; padding:9px 0;
+    border-bottom:1px solid var(--line);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px;
+  }
+  .instr-item .instr-info{flex:1;}
+  .instr-item .instr-info .n{font-weight:700; color:var(--navy);}
+  .instr-item .instr-info .d{font-size:11.5px; color:var(--muted);}
+  .instr-item button{
+    border:none; background:none; cursor:pointer; font-size:12px; padding:4px 6px;
+    color:var(--muted);
+  }
+  .instr-item button.edit{color:var(--wine);}
+  .instr-empty{font-size:12.5px; color:var(--muted); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:8px 0;}
+
   .notes{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     font-size:11.5px; color:var(--muted); line-height:1.6; margin-bottom:26px;
@@ -341,6 +379,7 @@
   body.pdf-export .add-row-btn,
   body.pdf-export .discount-row,
   body.pdf-export .sig-upload-row,
+  body.pdf-export .instr-row,
   body.pdf-export .legs-title-row{display:none !important;}
   body.pdf-export #sheet{box-shadow:none !important;}
 
@@ -482,9 +521,15 @@
       </div>
     </div>
 
+    <div class="instr-row">
+      <label>Instrumentadora</label>
+      <select id="instrumentadoraSelect"><option value="">Não informar / a combinar</option></select>
+      <button id="manageInstrBtn" type="button">Gerenciar</button>
+    </div>
+
     <ul class="notes">
       <li>Os valores informados referem-se exclusivamente aos procedimentos adicionais, que não são cobertos pela sua Operadora de Saúde. Os honorários médicos do procedimento cirúrgico são integralmente cobertos pelo convênio.</li>
-      <li>O custo da instrumentação cirúrgica também não é coberto pela Operadora de Saúde e deverá ser pago à parte, diretamente à profissional responsável — valor a ser informado.</li>
+      <li id="instrNote">O custo da instrumentação cirúrgica também não é coberto pela Operadora de Saúde e deverá ser pago à parte, diretamente à profissional responsável — valor a ser informado.</li>
       <li>Este orçamento é válido por 30 dias a partir da data de emissão. Para confirmação, entre em contato pelo WhatsApp <b>(41) 99167-9111</b>, por onde serão fornecidas as orientações posteriores em relação ao pagamento e contato da instrumentadora.</li>
     </ul>
 
@@ -532,6 +577,38 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="instrModal">
+  <div class="modal-box" style="text-align:left; max-width:420px;">
+    <p style="text-align:center; font-weight:700; color:var(--navy); margin-bottom:14px;">Instrumentadoras</p>
+
+    <div id="instrList" style="margin-bottom:14px; max-height:220px; overflow-y:auto;"></div>
+
+    <div id="instrForm" style="border-top:1px solid var(--line); padding-top:12px;">
+      <input type="hidden" id="instrEditId" value="">
+      <div style="margin-bottom:8px;">
+        <label class="instr-form-label">Nome</label>
+        <input type="text" id="instrName" placeholder="Nome da instrumentadora" class="instr-form-input">
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:12px;">
+        <div style="flex:1;">
+          <label class="instr-form-label">Valor cobrado</label>
+          <input type="text" id="instrValue" placeholder="0,00" inputmode="decimal" class="instr-form-input">
+        </div>
+        <div style="flex:1;">
+          <label class="instr-form-label">Telefone</label>
+          <input type="text" id="instrPhone" placeholder="(41) 90000-0000" inputmode="tel" class="instr-form-input">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="instrFormCancel" type="button">Limpar</button>
+        <button class="btn-confirm" id="instrFormSave" type="button">Salvar</button>
+      </div>
+    </div>
+
+    <button class="btn-cancel" id="instrModalClose" style="width:100%; margin-top:12px;" type="button">Fechar</button>
+  </div>
+</div>
+
 <script>
 (function(){
   // ---------- Storage ----------
@@ -545,7 +622,7 @@
 
   let state = {
     patientName:'', patientPhone:'', date:'', rows: defaultRows.map(r=>({...r})), discountPct:'', discountMode:'pct',
-    sigDay:'', sigMonth:'', sigYear:''
+    sigDay:'', sigMonth:'', sigYear:'', instrumentadoraId:''
   };
 
   function loadState(){
@@ -887,6 +964,121 @@
   // Re-sync canvas drawings to the compact print layout, then restore on-screen size after
   window.addEventListener('afterprint', ()=>{ document.title = ORIGINAL_TITLE; });
 
+  // ---------- Instrumentadoras (shared across all budgets, not just this draft) ----------
+  const INSTR_KEY = 'instrumentadoras_v1';
+  const instrModal = document.getElementById('instrModal');
+  const instrListEl = document.getElementById('instrList');
+  const instrSelect = document.getElementById('instrumentadoraSelect');
+  const instrNoteEl = document.getElementById('instrNote');
+  const instrEditId = document.getElementById('instrEditId');
+  const instrNameEl = document.getElementById('instrName');
+  const instrValueEl = document.getElementById('instrValue');
+  const instrPhoneEl = document.getElementById('instrPhone');
+
+  function loadInstrumentadoras(){
+    try{
+      const raw = localStorage.getItem(INSTR_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function saveInstrumentadoras(list){
+    try{ localStorage.setItem(INSTR_KEY, JSON.stringify(list)); }catch(e){}
+  }
+  function formatInstrPhone(raw){ return formatPhoneBR(raw); }
+
+  function renderInstrList(){
+    const list = loadInstrumentadoras();
+    if(!list.length){
+      instrListEl.innerHTML = '<div class="instr-empty">Nenhuma instrumentadora cadastrada ainda.</div>';
+    } else {
+      instrListEl.innerHTML = list.map(item => `
+        <div class="instr-item">
+          <div class="instr-info">
+            <div class="n">${escapeHtml(item.name)}</div>
+            <div class="d">R$ ${escapeHtml(item.value || '—')} · ${escapeHtml(item.phone || 'sem telefone')}</div>
+          </div>
+          <button class="edit" data-edit="${item.id}" type="button">Editar</button>
+          <button data-remove="${item.id}" type="button">Remover</button>
+        </div>
+      `).join('');
+    }
+    instrListEl.querySelectorAll('[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const item = loadInstrumentadoras().find(i => i.id === btn.dataset.edit);
+        if(!item) return;
+        instrEditId.value = item.id;
+        instrNameEl.value = item.name;
+        instrValueEl.value = item.value;
+        instrPhoneEl.value = item.phone;
+      });
+    });
+    instrListEl.querySelectorAll('[data-remove]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const list = loadInstrumentadoras().filter(i => i.id !== btn.dataset.remove);
+        saveInstrumentadoras(list);
+        if(state.instrumentadoraId === btn.dataset.remove){
+          state.instrumentadoraId = ''; saveState();
+        }
+        renderInstrList(); renderInstrSelect(); updateInstrNote();
+      });
+    });
+  }
+
+  function renderInstrSelect(){
+    const list = loadInstrumentadoras();
+    const current = instrSelect.value;
+    instrSelect.innerHTML = '<option value="">Não informar / a combinar</option>' +
+      list.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+    instrSelect.value = list.some(i => i.id === current) ? current : (state.instrumentadoraId || '');
+  }
+
+  function updateInstrNote(){
+    const list = loadInstrumentadoras();
+    const selected = list.find(i => i.id === instrSelect.value);
+    const hl = 'style="color:var(--navy); font-weight:700;"';
+    if(selected){
+      const valuePart = selected.value
+        ? `no valor de <b ${hl}>R$ ${escapeHtml(selected.value)}</b>`
+        : 'em valor a combinar';
+      const phonePart = selected.phone ? `, contato: <b ${hl}>${escapeHtml(selected.phone)}</b>` : '';
+      instrNoteEl.innerHTML = `O custo da instrumentação cirúrgica também não é coberto pela Operadora de Saúde e deverá ser pago à parte, diretamente à profissional responsável — <b ${hl}>${escapeHtml(selected.name)}</b>, ${valuePart}${phonePart}.`;
+    } else {
+      instrNoteEl.textContent = 'O custo da instrumentação cirúrgica também não é coberto pela Operadora de Saúde e deverá ser pago à parte, diretamente à profissional responsável — valor a ser informado.';
+    }
+  }
+
+  document.getElementById('manageInstrBtn').addEventListener('click', ()=>{
+    renderInstrList();
+    instrModal.classList.add('open');
+  });
+  document.getElementById('instrModalClose').addEventListener('click', ()=>{
+    instrModal.classList.remove('open');
+  });
+  document.getElementById('instrFormCancel').addEventListener('click', ()=>{
+    instrEditId.value = ''; instrNameEl.value = ''; instrValueEl.value = ''; instrPhoneEl.value = '';
+  });
+  instrPhoneEl.addEventListener('input', ()=>{ instrPhoneEl.value = formatInstrPhone(instrPhoneEl.value); });
+  document.getElementById('instrFormSave').addEventListener('click', ()=>{
+    const name = instrNameEl.value.trim();
+    if(!name){ alert('Preenche o nome da instrumentadora.'); return; }
+    let list = loadInstrumentadoras();
+    const valueFormatted = instrValueEl.value.trim() ? formatMoney(parseValue(instrValueEl.value)) : '';
+    if(instrEditId.value){
+      list = list.map(i => i.id === instrEditId.value
+        ? { ...i, name, value: valueFormatted, phone: instrPhoneEl.value.trim() }
+        : i);
+    } else {
+      list.push({ id: 'instr_' + Date.now(), name, value: valueFormatted, phone: instrPhoneEl.value.trim() });
+    }
+    saveInstrumentadoras(list);
+    instrEditId.value = ''; instrNameEl.value = ''; instrValueEl.value = ''; instrPhoneEl.value = '';
+    renderInstrList(); renderInstrSelect(); updateInstrNote();
+  });
+  instrSelect.addEventListener('change', ()=>{
+    state.instrumentadoraId = instrSelect.value; saveState();
+    updateInstrNote();
+  });
+
   // ---------- Toolbar actions ----------
   const ORIGINAL_TITLE = document.title;
   function buildFileName(){
@@ -1046,6 +1238,8 @@ Fico à disposição para esclarecer qualquer dúvida!
   discountEl.placeholder = discountMode === 'pct' ? '0' : '0,00';
   renderRows();
   recalcTotals();
+  renderInstrSelect();
+  updateInstrNote();
 
 })();
 </script>
