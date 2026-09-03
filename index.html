@@ -263,6 +263,20 @@
   .instr-item button.edit{color:var(--wine);}
   .instr-empty{font-size:12.5px; color:var(--muted); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:8px 0;}
 
+  .hist-item{
+    display:flex; align-items:center; gap:10px; padding:10px 4px;
+    border-bottom:1px solid var(--line); cursor:pointer;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px;
+  }
+  .hist-item:active{background:#f5f3ee;}
+  .hist-item .hist-info{flex:1;}
+  .hist-item .hist-info .n{font-weight:700; color:var(--navy);}
+  .hist-item .hist-info .d{font-size:11.5px; color:var(--muted);}
+  .hist-item .hist-total{font-weight:700; color:var(--wine); font-size:13px; white-space:nowrap;}
+  .hist-item .hist-del{
+    border:none; background:none; color:var(--muted); font-size:15px; cursor:pointer; padding:4px 6px;
+  }
+
   .notes{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     font-size:11.5px; color:var(--muted); line-height:1.6; margin-bottom:26px;
@@ -410,6 +424,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <div id="sheet">
@@ -420,6 +437,7 @@
       <button class="secondary" id="clearAllBtn">Limpar tudo</button>
       <button class="secondary" id="driveBtn">Salvar no Drive</button>
       <button class="secondary" id="waBtn">Enviar WhatsApp</button>
+      <button class="secondary" id="historyBtn">Histórico</button>
       <button id="printBtn">Gerar PDF</button>
     </div>
   </div>
@@ -610,6 +628,38 @@
     </div>
 
     <button class="btn-cancel" id="instrModalClose" style="width:100%; margin-top:12px;" type="button">Fechar</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="loginModal">
+  <div class="modal-box" style="text-align:left; max-width:340px;">
+    <p style="text-align:center; font-weight:700; color:var(--navy); margin-bottom:14px;">Entrar</p>
+    <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">Login necessário só para salvar e acessar o histórico de orçamentos — o resto do app funciona sem login.</p>
+    <div style="margin-bottom:10px;">
+      <label class="instr-form-label">E-mail</label>
+      <input type="email" id="loginEmail" class="instr-form-input" autocomplete="username">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label class="instr-form-label">Senha</label>
+      <input type="password" id="loginPassword" class="instr-form-input" autocomplete="current-password">
+    </div>
+    <p id="loginError" style="font-size:11.5px; color:var(--wine); margin-bottom:10px; display:none;"></p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="loginCancel" type="button">Cancelar</button>
+      <button class="btn-confirm" id="loginSubmit" type="button">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="historyModal">
+  <div class="modal-box" style="text-align:left; max-width:440px;">
+    <p style="text-align:center; font-weight:700; color:var(--navy); margin-bottom:6px;">Histórico de Orçamentos</p>
+    <p id="historyAccount" style="text-align:center; font-size:11px; color:var(--muted); margin-bottom:14px;"></p>
+    <div id="historyList" style="max-height:340px; overflow-y:auto; margin-bottom:12px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="historySignOut" type="button">Sair da conta</button>
+      <button class="btn-cancel" id="historyClose" type="button">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -876,7 +926,9 @@
     return {
       undo(){ strokes.pop(); redraw(); persist(); },
       clear(){ strokes = []; redraw(); persist(); },
-      resync(){ syncResolution(); }
+      resync(){ syncResolution(); },
+      getStrokes(){ return strokes; },
+      setStrokes(newStrokes){ strokes = newStrokes || []; redraw(); persist(); }
     };
   }
 
@@ -1099,6 +1151,192 @@
     updateInstrNote();
   });
 
+  // ---------- Firebase (histórico de orçamentos) ----------
+  // Substitua pelos valores reais do seu projeto (Firebase Console → Project settings → Your apps).
+  const firebaseConfig = {
+    apiKey: "SUA_API_KEY",
+    authDomain: "SEU_PROJETO.firebaseapp.com",
+    projectId: "SEU_PROJETO",
+    storageBucket: "SEU_PROJETO.appspot.com",
+    messagingSenderId: "SEU_SENDER_ID",
+    appId: "SEU_APP_ID"
+  };
+  let fbApp = null, fbAuth = null, fbDb = null, fbUser = null;
+  try{
+    if(firebaseConfig.apiKey && firebaseConfig.apiKey !== 'SUA_API_KEY'){
+      fbApp = firebase.initializeApp(firebaseConfig);
+      fbAuth = firebase.auth();
+      fbDb = firebase.firestore();
+      fbAuth.onAuthStateChanged(user => { fbUser = user; });
+    }
+  }catch(e){ console.error('Firebase init falhou', e); }
+
+  const loginModal = document.getElementById('loginModal');
+  const loginEmail = document.getElementById('loginEmail');
+  const loginPassword = document.getElementById('loginPassword');
+  const loginError = document.getElementById('loginError');
+  const historyModal = document.getElementById('historyModal');
+  const historyListEl = document.getElementById('historyList');
+  const historyAccountEl = document.getElementById('historyAccount');
+
+  function requireLogin(onSuccess){
+    if(!fbAuth){
+      alert('O histórico ainda não foi configurado neste app (faltam as credenciais do Firebase).');
+      return;
+    }
+    if(fbUser){ onSuccess(); return; }
+    loginError.style.display = 'none';
+    loginModal.classList.add('open');
+    loginModal.dataset.pending = '1';
+    loginModal._onSuccess = onSuccess;
+  }
+  document.getElementById('loginCancel').addEventListener('click', ()=>{
+    loginModal.classList.remove('open');
+  });
+  document.getElementById('loginSubmit').addEventListener('click', ()=>{
+    const email = loginEmail.value.trim();
+    const pass = loginPassword.value;
+    if(!email || !pass){ return; }
+    fbAuth.signInWithEmailAndPassword(email, pass)
+      .then(cred => {
+        fbUser = cred.user;
+        loginModal.classList.remove('open');
+        loginPassword.value = '';
+        if(typeof loginModal._onSuccess === 'function') loginModal._onSuccess();
+      })
+      .catch(err => {
+        loginError.textContent = 'Não consegui entrar: ' + (err.message || 'verifica e-mail e senha.');
+        loginError.style.display = 'block';
+      });
+  });
+
+  function gatherOrcamentoData(){
+    return {
+      patientName: patientEl.value || '',
+      patientPhone: patientPhoneEl.value || '',
+      date: dateEl.value || '',
+      rows: state.rows,
+      discountPct: discountEl.value || '',
+      discountMode: discountMode,
+      sigDay: document.getElementById('sigDay').value || '',
+      sigMonth: document.getElementById('sigMonth').value || '',
+      sigYear: document.getElementById('sigYear').value || '',
+      instrumentadoraId: instrSelect.value || '',
+      legRStrokes: legR.getStrokes(),
+      legLStrokes: legL.getStrokes(),
+      sigImage: sigImageEl.style.display !== 'none' ? (sigImageEl.getAttribute('src') || '') : '',
+      totalParcelado: totalParceladoEl.textContent,
+      totalVista: totalVistaEl.textContent,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+  }
+
+  function saveToHistory(){
+    requireLogin(()=>{
+      const data = gatherOrcamentoData();
+      fbDb.collection('users').doc(fbUser.uid).collection('orcamentos').add(data)
+        .catch(err => alert('Não consegui salvar no histórico: ' + err.message));
+    });
+  }
+
+  function applyOrcamentoData(data){
+    patientEl.value = data.patientName || '';
+    patientPhoneEl.value = formatPhoneBR(data.patientPhone || '');
+    dateEl.value = data.date || '';
+    document.getElementById('sigDay').value = data.sigDay || '';
+    document.getElementById('sigMonth').value = data.sigMonth || '';
+    document.getElementById('sigYear').value = data.sigYear || '';
+    state.patientName = patientEl.value;
+    state.patientPhone = patientPhoneEl.value;
+    state.date = dateEl.value;
+    state.sigDay = data.sigDay || '';
+    state.sigMonth = data.sigMonth || '';
+    state.sigYear = data.sigYear || '';
+    state.rows = (data.rows && data.rows.length) ? data.rows : defaultRows.map(r=>({...r}));
+    state.discountPct = data.discountPct || '';
+    state.discountMode = data.discountMode || 'pct';
+    state.instrumentadoraId = data.instrumentadoraId || '';
+    saveState();
+
+    discountEl.value = state.discountPct;
+    discountMode = state.discountMode;
+    document.querySelectorAll('#discountModeToggle button').forEach(b=>{
+      b.classList.toggle('active', b.dataset.mode === discountMode);
+    });
+    discountEl.placeholder = discountMode === 'pct' ? '0' : '0,00';
+
+    renderRows();
+    recalcTotals();
+    renderInstrSelect();
+    instrSelect.value = state.instrumentadoraId || '';
+    updateInstrNote();
+
+    legR.setStrokes(data.legRStrokes || []);
+    legL.setStrokes(data.legLStrokes || []);
+
+    if(data.sigImage){ showSigImage(data.sigImage); try{ localStorage.setItem(SIG_IMG_KEY, data.sigImage); }catch(e){} }
+  }
+
+  function renderHistoryList(){
+    historyAccountEl.textContent = fbUser ? fbUser.email : '';
+    historyListEl.innerHTML = '<div class="instr-empty">Carregando…</div>';
+    fbDb.collection('users').doc(fbUser.uid).collection('orcamentos')
+      .orderBy('updatedAt', 'desc').limit(100).get()
+      .then(snap => {
+        if(snap.empty){
+          historyListEl.innerHTML = '<div class="instr-empty">Nenhum orçamento salvo ainda.</div>';
+          return;
+        }
+        historyListEl.innerHTML = '';
+        snap.forEach(doc => {
+          const d = doc.data();
+          const when = d.updatedAt && d.updatedAt.toDate ? d.updatedAt.toDate() : null;
+          const whenStr = when ? when.toLocaleDateString('pt-BR') + ' ' + when.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '';
+          const row = document.createElement('div');
+          row.className = 'hist-item';
+          row.innerHTML = `
+            <div class="hist-info">
+              <div class="n">${escapeHtml(d.patientName || 'Sem nome')}</div>
+              <div class="d">${escapeHtml(d.date || '')} · salvo em ${escapeHtml(whenStr)}</div>
+            </div>
+            <div class="hist-total">${escapeHtml(d.totalParcelado || '')}</div>
+            <button class="hist-del" data-id="${doc.id}" title="Excluir">✕</button>
+          `;
+          row.querySelector('.hist-info').addEventListener('click', ()=>{
+            applyOrcamentoData(doc.data());
+            historyModal.classList.remove('open');
+          });
+          row.querySelector('.hist-total').addEventListener('click', ()=>{
+            applyOrcamentoData(doc.data());
+            historyModal.classList.remove('open');
+          });
+          row.querySelector('.hist-del').addEventListener('click', (ev)=>{
+            ev.stopPropagation();
+            if(!confirm('Excluir este orçamento do histórico?')) return;
+            fbDb.collection('users').doc(fbUser.uid).collection('orcamentos').doc(doc.id).delete()
+              .then(renderHistoryList);
+          });
+          historyListEl.appendChild(row);
+        });
+      })
+      .catch(err => {
+        historyListEl.innerHTML = '<div class="instr-empty">Erro ao carregar: ' + escapeHtml(err.message) + '</div>';
+      });
+  }
+
+  document.getElementById('historyBtn').addEventListener('click', ()=>{
+    requireLogin(()=>{
+      historyModal.classList.add('open');
+      renderHistoryList();
+    });
+  });
+  document.getElementById('historyClose').addEventListener('click', ()=>{
+    historyModal.classList.remove('open');
+  });
+  document.getElementById('historySignOut').addEventListener('click', ()=>{
+    fbAuth.signOut().then(()=>{ fbUser = null; historyModal.classList.remove('open'); });
+  });
+
   // ---------- Toolbar actions ----------
   const ORIGINAL_TITLE = document.title;
   function buildFileName(){
@@ -1156,6 +1394,9 @@
     }catch(err){
       alert('Não consegui gerar o PDF. Verifica a conexão com a internet (as bibliotecas de geração de PDF precisam carregar na primeira vez) e tenta de novo.');
       return;
+    }
+    if(fbAuth && fbUser){
+      try{ saveToHistory(); }catch(e){}
     }
     const file = new File([blob], filename, { type: 'application/pdf' });
     if(navigator.canShare && navigator.canShare({ files: [file] })){
