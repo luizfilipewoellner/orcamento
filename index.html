@@ -43,16 +43,16 @@
     position:sticky; top:0; z-index:50;
     background:var(--navy-deep);
     color:#fff;
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 0;
     padding:10px 16px;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
+  .toolbar > div{display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end;}
   .toolbar .brand{font-size:13px; letter-spacing:.04em; opacity:.85;}
   .toolbar button{
     font-family:inherit; font-size:13px; font-weight:600;
     border:none; border-radius:8px; padding:9px 14px;
     background:var(--wine); color:#fff; cursor:pointer;
-    margin-left:8px;
   }
   .toolbar button.secondary{background:transparent; border:1px solid rgba(255,255,255,.35); color:#fff;}
   .toolbar button:active{transform:scale(.97);}
@@ -276,6 +276,10 @@
   .hist-item .hist-del{
     border:none; background:none; color:var(--muted); font-size:15px; cursor:pointer; padding:4px 6px;
   }
+  .hist-item .hist-pdf{
+    border:1px solid var(--wine-light); background:none; color:var(--wine); font-size:10.5px; font-weight:600;
+    cursor:pointer; padding:5px 9px; border-radius:6px; white-space:nowrap;
+  }
 
   .notes{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -438,6 +442,8 @@
       <button class="secondary" id="driveBtn">Salvar no Drive</button>
       <button class="secondary" id="waBtn">Enviar WhatsApp</button>
       <button class="secondary" id="historyBtn">Histórico</button>
+      <button class="secondary" id="saveHistoryBtn">Salvar Histórico</button>
+      <button class="secondary" id="printPageBtn">Imprimir</button>
       <button id="printBtn">Gerar PDF</button>
     </div>
   </div>
@@ -1231,11 +1237,37 @@
     };
   }
 
-  function saveToHistory(){
-    requireLogin(()=>{
+  // pdfBlob is optional — when provided (e.g. right after "Gerar PDF"), the PDF
+  // is base64-encoded and saved INSIDE the Firestore document (no Cloud Storage,
+  // which now requires the paid Blaze plan). Firestore documents cap at 1MB, so
+  // if the encoded PDF doesn't fit, the form data still saves but without the file.
+  const FIRESTORE_SAFE_LIMIT = 850000; // leaves headroom under the 1MB doc cap for the rest of the fields
+
+  function blobToBase64(blob){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result); // data:application/pdf;base64,....
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function saveToHistory(pdfBlob){
+    requireLogin(async ()=>{
       const data = gatherOrcamentoData();
-      fbDb.collection('users').doc(fbUser.uid).collection('orcamentos').add(data)
-        .catch(err => alert('Não consegui salvar no histórico: ' + err.message));
+      const colRef = fbDb.collection('users').doc(fbUser.uid).collection('orcamentos');
+      if(pdfBlob){
+        try{
+          const b64 = await blobToBase64(pdfBlob);
+          if(b64.length <= FIRESTORE_SAFE_LIMIT){
+            data.pdfBase64 = b64;
+            data.pdfFilename = buildFileName() + '.pdf';
+          } else {
+            data.pdfTooLarge = true;
+          }
+        }catch(e){ /* saves without the PDF if encoding fails */ }
+      }
+      colRef.add(data).catch(err => alert('Não consegui salvar no histórico: ' + err.message));
     });
   }
 
@@ -1294,12 +1326,16 @@
           const whenStr = when ? when.toLocaleDateString('pt-BR') + ' ' + when.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '';
           const row = document.createElement('div');
           row.className = 'hist-item';
+          const pdfBtn = d.pdfBase64
+            ? `<button class="hist-pdf" type="button">Abrir PDF</button>`
+            : (d.pdfTooLarge ? '<span class="instr-empty" style="padding:0; font-size:10px;">PDF grande demais p/ salvar</span>' : '');
           row.innerHTML = `
             <div class="hist-info">
               <div class="n">${escapeHtml(d.patientName || 'Sem nome')}</div>
               <div class="d">${escapeHtml(d.date || '')} · salvo em ${escapeHtml(whenStr)}</div>
             </div>
             <div class="hist-total">${escapeHtml(d.totalParcelado || '')}</div>
+            ${pdfBtn}
             <button class="hist-del" data-id="${doc.id}" title="Excluir">✕</button>
           `;
           row.querySelector('.hist-info').addEventListener('click', ()=>{
@@ -1310,6 +1346,22 @@
             applyOrcamentoData(doc.data());
             historyModal.classList.remove('open');
           });
+          const pdfBtnEl = row.querySelector('.hist-pdf');
+          if(pdfBtnEl){
+            pdfBtnEl.addEventListener('click', (ev)=>{
+              ev.stopPropagation();
+              try{
+                const parts = d.pdfBase64.split(',');
+                const bin = atob(parts[1]);
+                const bytes = new Uint8Array(bin.length);
+                for(let i=0;i<bin.length;i++){ bytes[i] = bin.charCodeAt(i); }
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(()=> URL.revokeObjectURL(url), 30000);
+              }catch(e){ alert('Não consegui abrir esse PDF.'); }
+            });
+          }
           row.querySelector('.hist-del').addEventListener('click', (ev)=>{
             ev.stopPropagation();
             if(!confirm('Excluir este orçamento do histórico?')) return;
@@ -1395,9 +1447,6 @@
       alert('Não consegui gerar o PDF. Verifica a conexão com a internet (as bibliotecas de geração de PDF precisam carregar na primeira vez) e tenta de novo.');
       return;
     }
-    if(fbAuth && fbUser){
-      try{ saveToHistory(); }catch(e){}
-    }
     const file = new File([blob], filename, { type: 'application/pdf' });
     if(navigator.canShare && navigator.canShare({ files: [file] })){
       try{
@@ -1416,6 +1465,37 @@
   }
 
   document.getElementById('printBtn').addEventListener('click', shareOrDownloadPdf);
+
+  document.getElementById('saveHistoryBtn').addEventListener('click', async ()=>{
+    let blob;
+    try{
+      blob = await generatePdfBlob();
+    }catch(err){
+      alert('Não consegui gerar o PDF pra salvar. Tenta de novo.');
+      return;
+    }
+    saveToHistory(blob);
+  });
+
+  document.getElementById('printPageBtn').addEventListener('click', async ()=>{
+    let blob;
+    try{
+      blob = await generatePdfBlob();
+    }catch(err){
+      alert('Não consegui gerar o PDF. Verifica a conexão com a internet e tenta de novo.');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if(!win){
+      alert('O navegador bloqueou a abertura da página de impressão. Permite pop-ups pra esse site e tenta de novo.');
+      return;
+    }
+    const tryPrint = () => { try{ win.focus(); win.print(); }catch(e){} };
+    win.addEventListener ? win.addEventListener('load', tryPrint) : null;
+    setTimeout(tryPrint, 800);
+    setTimeout(()=> URL.revokeObjectURL(url), 60000);
+  });
 
   document.getElementById('driveBtn').addEventListener('click', shareOrDownloadPdf);
 
